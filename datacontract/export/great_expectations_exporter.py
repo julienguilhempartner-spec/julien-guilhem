@@ -5,6 +5,7 @@ Great Expectations expectations format.
 """
 
 import json
+import logging
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -13,6 +14,64 @@ from open_data_contract_standard.model import DataQuality, OpenDataContractStand
 from datacontract.export.exporter import (
     Exporter,
     _check_schema_name_for_export,
+)
+
+logger = logging.getLogger(__name__)
+
+#: Regular expressions used to translate ODCS ``logicalTypeOptions.format`` values
+#: of string properties into ``expect_column_values_to_match_regex`` expectations.
+_STRING_FORMAT_REGEX: Dict[str, str] = {
+    "email": r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    "uuid": r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    "uri": r"^[a-zA-Z][a-zA-Z0-9+.-]*:\S*$",
+    "hostname": r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$",
+    "ipv4": r"^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$",
+    "ipv6": r"^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$",
+}
+
+#: Mapping of JDK ``DateTimeFormatter`` letter runs to their strftime equivalent.
+_JDK_TO_STRFTIME: Dict[str, str] = {
+    "yyyy": "%Y",
+    "uuuu": "%Y",
+    "yy": "%y",
+    "MMMM": "%B",
+    "MMM": "%b",
+    "MM": "%m",
+    "dd": "%d",
+    "DDD": "%j",
+    "EEEE": "%A",
+    "EEE": "%a",
+    "HH": "%H",
+    "hh": "%I",
+    "mm": "%M",
+    "ss": "%S",
+    "SSSSSS": "%f",
+    "SSS": "%f",
+    "a": "%p",
+    "Z": "%z",
+    "ZZ": "%z",
+    "ZZZ": "%z",
+    "X": "%z",
+    "XX": "%z",
+    "XXX": "%z",
+    "zzz": "%Z",
+    "z": "%Z",
+}
+
+#: ODCS logical types whose ``format`` option describes a date/time pattern.
+_TEMPORAL_LOGICAL_TYPES = ("date", "timestamp", "time")
+
+#: ``logicalTypeOptions`` keys that have no Great Expectations core equivalent.
+_UNSUPPORTED_LOGICAL_TYPE_OPTIONS = (
+    "multipleOf",
+    "minItems",
+    "maxItems",
+    "uniqueItems",
+    "minProperties",
+    "maxProperties",
+    "required",
+    "timezone",
+    "defaultTimezone",
 )
 
 
@@ -72,6 +131,59 @@ def _get_logical_type_option(prop: SchemaProperty, key: str):
     if prop.logicalTypeOptions is None:
         return None
     return prop.logicalTypeOptions.get(key)
+
+
+def _jdk_format_to_strftime(jdk_format: str) -> Optional[str]:
+    """Converts a JDK ``DateTimeFormatter`` pattern to a strftime format.
+
+    Args:
+        jdk_format (str): The JDK pattern, e.g. ``yyyy-MM-dd``.
+
+    Returns:
+        Optional[str]: The strftime format, or None if a pattern letter is not supported.
+    """
+    result = []
+    index = 0
+    while index < len(jdk_format):
+        char = jdk_format[index]
+        if char == "'":
+            end = jdk_format.find("'", index + 1)
+            if end == -1:
+                return None
+            literal = jdk_format[index + 1 : end]
+            result.append(literal if literal else "'")
+            index = end + 1
+        elif char.isalpha():
+            end = index
+            while end < len(jdk_format) and jdk_format[end] == char:
+                end += 1
+            run = jdk_format[index:end]
+            strftime_token = _JDK_TO_STRFTIME.get(run)
+            if strftime_token is None:
+                return None
+            result.append(strftime_token)
+            index = end
+        else:
+            result.append("%%" if char == "%" else char)
+            index += 1
+    return "".join(result)
+
+
+def _warn_unsupported_logical_type_options(field_name: str, prop: SchemaProperty) -> None:
+    """Logs a warning for each logical type option without a Great Expectations equivalent.
+
+    Args:
+        field_name (str): The name of the field.
+        prop (SchemaProperty): The property object.
+    """
+    for option in _UNSUPPORTED_LOGICAL_TYPE_OPTIONS:
+        if _get_logical_type_option(prop, option) is not None:
+            logger.warning(
+                "Great Expectations export: logicalTypeOptions.%s of column '%s' has no "
+                "Great Expectations equivalent and is skipped.",
+                option,
+                field_name,
+            )
 
 
 def _get_enum_from_custom_properties(prop: SchemaProperty) -> Optional[List[str]]:
@@ -206,8 +318,20 @@ def add_field_expectations(
         else:
             field_type = prop_type
         expectations.append(to_column_types_exp(field_name, field_type))
-    if prop.unique:
-        expectations.append(to_column_unique_exp(field_name))
+
+    # A primary key implies both non-null and unique values, so `required` and `unique`
+    # do not need to be considered separately.
+    # Library qualities override schema attributes; skip strict rule if covered by Library.
+    if prop.primaryKey:
+        if not _has_library_quality_for_metric(prop, "nullValues"):
+            expectations.append(to_column_not_null_exp(field_name, mostly=1.0))
+        if not _has_library_quality_for_metric(prop, "duplicateValues"):
+            expectations.append(to_column_unique_exp(field_name, mostly=1.0))
+    else:
+        if prop.required and not _has_library_quality_for_metric(prop, "nullValues"):
+            expectations.append(to_column_not_null_exp(field_name, mostly=1.0))
+        if prop.unique and not _has_library_quality_for_metric(prop, "duplicateValues"):
+            expectations.append(to_column_unique_exp(field_name, mostly=1.0))
 
     min_length = _get_logical_type_option(prop, "minLength")
     max_length = _get_logical_type_option(prop, "maxLength")
@@ -216,14 +340,79 @@ def add_field_expectations(
 
     minimum = _get_logical_type_option(prop, "minimum")
     maximum = _get_logical_type_option(prop, "maximum")
+    exclusive_minimum = _get_logical_type_option(prop, "exclusiveMinimum")
+    exclusive_maximum = _get_logical_type_option(prop, "exclusiveMaximum")
+    if exclusive_minimum is not None:
+        minimum = exclusive_minimum
+    if exclusive_maximum is not None:
+        maximum = exclusive_maximum
     if minimum is not None or maximum is not None:
-        expectations.append(to_column_min_max_exp(field_name, minimum, maximum))
+        expectations.append(
+            to_column_min_max_exp(
+                field_name,
+                minimum,
+                maximum,
+                strict_min=exclusive_minimum is not None,
+                strict_max=exclusive_maximum is not None,
+            )
+        )
+
+    pattern = _get_logical_type_option(prop, "pattern")
+    if pattern is not None:
+        expectations.append(to_column_match_regex_exp(field_name, pattern))
+
+    add_format_expectation(field_name, prop, expectations)
 
     enum_values = _get_logical_type_option(prop, "enum") or _get_enum_from_custom_properties(prop)
     if enum_values is not None and len(enum_values) != 0:
         expectations.append(to_column_enum_exp(field_name, enum_values))
 
+    _warn_unsupported_logical_type_options(field_name, prop)
+
     return expectations
+
+
+def add_format_expectation(
+    field_name: str,
+    prop: SchemaProperty,
+    expectations: List[Dict[str, Any]],
+) -> None:
+    """Adds an expectation for the ``logicalTypeOptions.format`` option, when supported.
+
+    Temporal logical types are translated to a strftime format expectation, strings with a
+    known format to a regex expectation. The format of numeric logical types describes the
+    storage of the value rather than a constraint, and is therefore ignored.
+
+    Args:
+        field_name (str): The name of the field.
+        prop (SchemaProperty): The property object.
+        expectations (List[Dict[str, Any]]): The expectations list to update.
+    """
+    format_option = _get_logical_type_option(prop, "format")
+    if format_option is None:
+        return
+    logical_type = (prop.logicalType or "").lower()
+    if logical_type in _TEMPORAL_LOGICAL_TYPES:
+        strftime_format = _jdk_format_to_strftime(format_option)
+        if strftime_format is None:
+            logger.warning(
+                "Great Expectations export: date format '%s' of column '%s' cannot be converted "
+                "to a strftime format and is skipped.",
+                format_option,
+                field_name,
+            )
+            return
+        expectations.append(to_column_strftime_format_exp(field_name, strftime_format))
+    elif logical_type == "string":
+        regex = _STRING_FORMAT_REGEX.get(format_option.lower())
+        if regex is None:
+            logger.warning(
+                "Great Expectations export: string format '%s' of column '%s' is not supported and is skipped.",
+                format_option,
+                field_name,
+            )
+            return
+        expectations.append(to_column_match_regex_exp(field_name, regex))
 
 
 def add_column_order_exp(properties: List[SchemaProperty], expectations: List[Dict[str, Any]]):
@@ -238,7 +427,7 @@ def add_column_order_exp(properties: List[SchemaProperty], expectations: List[Di
         {
             "type": "expect_table_columns_to_match_ordered_list",
             "kwargs": {"column_list": column_names},
-            "meta": {},
+            "meta": {"expectation_id": ""},
         }
     )
 
@@ -256,23 +445,81 @@ def to_column_types_exp(field_name, field_type) -> Dict[str, Any]:
     return {
         "type": "expect_column_values_to_be_of_type",
         "kwargs": {"column": field_name, "type_": field_type},
-        "meta": {},
+        "meta": {"expectation_id": ""},
     }
 
 
-def to_column_unique_exp(field_name) -> Dict[str, Any]:
+def to_column_unique_exp(field_name, mostly: Optional[float] = None) -> Dict[str, Any]:
     """Creates a column uniqueness expectation.
 
     Args:
         field_name (str): The name of the field.
+        mostly (float | None): Optional GE ``mostly`` threshold (0.0–1.0).
 
     Returns:
         Dict[str, Any]: Column uniqueness expectation.
     """
+    kwargs: Dict[str, Any] = {"column": field_name}
+    if mostly is not None:
+        kwargs["mostly"] = mostly
     return {
         "type": "expect_column_values_to_be_unique",
-        "kwargs": {"column": field_name},
-        "meta": {},
+        "kwargs": kwargs,
+        "meta": {"expectation_id": ""},
+    }
+
+
+def to_column_not_null_exp(field_name, mostly: Optional[float] = None) -> Dict[str, Any]:
+    """Creates a column non-null expectation.
+
+    Args:
+        field_name (str): The name of the field.
+        mostly (float | None): Optional GE ``mostly`` threshold (0.0–1.0).
+
+    Returns:
+        Dict[str, Any]: Column non-null expectation.
+    """
+    kwargs: Dict[str, Any] = {"column": field_name}
+    if mostly is not None:
+        kwargs["mostly"] = mostly
+    return {
+        "type": "expect_column_values_to_not_be_null",
+        "kwargs": kwargs,
+        "meta": {"expectation_id": ""},
+    }
+
+
+def to_column_match_regex_exp(field_name, regex: str) -> Dict[str, Any]:
+    """Creates a column regex expectation.
+
+    Args:
+        field_name (str): The name of the field.
+        regex (str): The regular expression the values must match.
+
+    Returns:
+        Dict[str, Any]: Column regex expectation.
+    """
+    return {
+        "type": "expect_column_values_to_match_regex",
+        "kwargs": {"column": field_name, "regex": regex},
+        "meta": {"expectation_id": ""},
+    }
+
+
+def to_column_strftime_format_exp(field_name, strftime_format: str) -> Dict[str, Any]:
+    """Creates a column strftime format expectation.
+
+    Args:
+        field_name (str): The name of the field.
+        strftime_format (str): The strftime format the values must match.
+
+    Returns:
+        Dict[str, Any]: Column strftime format expectation.
+    """
+    return {
+        "type": "expect_column_values_to_match_strftime_format",
+        "kwargs": {"column": field_name, "strftime_format": strftime_format},
+        "meta": {"expectation_id": ""},
     }
 
 
@@ -294,25 +541,34 @@ def to_column_length_exp(field_name, min_length, max_length) -> Dict[str, Any]:
             "min_value": min_length,
             "max_value": max_length,
         },
-        "meta": {},
+        "meta": {"expectation_id": ""},
     }
 
 
-def to_column_min_max_exp(field_name, minimum, maximum) -> Dict[str, Any]:
+def to_column_min_max_exp(
+    field_name, minimum, maximum, strict_min: bool = False, strict_max: bool = False
+) -> Dict[str, Any]:
     """Creates a column min-max value expectation.
 
     Args:
         field_name (str): The name of the field.
         minimum (float | None): Minimum value.
         maximum (float | None): Maximum value.
+        strict_min (bool): Whether the minimum value is exclusive.
+        strict_max (bool): Whether the maximum value is exclusive.
 
     Returns:
         Dict[str, Any]: Column min-max value expectation.
     """
+    kwargs = {"column": field_name, "min_value": minimum, "max_value": maximum}
+    if strict_min:
+        kwargs["strict_min"] = True
+    if strict_max:
+        kwargs["strict_max"] = True
     return {
         "type": "expect_column_values_to_be_between",
-        "kwargs": {"column": field_name, "min_value": minimum, "max_value": maximum},
-        "meta": {},
+        "kwargs": kwargs,
+        "meta": {"expectation_id": ""},
     }
 
 
@@ -329,8 +585,230 @@ def to_column_enum_exp(field_name, enum_list: List[str]) -> Dict[str, Any]:
     return {
         "type": "expect_column_values_to_be_in_set",
         "kwargs": {"column": field_name, "value_set": enum_list},
-        "meta": {},
+        "meta": {"expectation_id": ""},
     }
+
+
+# ---------------------------------------------------------------------------
+# Library quality support
+# ---------------------------------------------------------------------------
+
+_PERCENT_UNITS = {"percent", "percentage", "%"}
+
+
+def _is_percent_unit(quality: DataQuality) -> bool:
+    """True when the quality threshold is expressed as a percentage of rows."""
+    unit = getattr(quality, "unit", None)
+    return unit is not None and str(unit).strip().lower() in _PERCENT_UNITS
+
+
+def _calculate_mostly(quality: DataQuality) -> Optional[float]:
+    """Convert a Library error-threshold to a GE ``mostly`` value (0.0–1.0).
+
+    Returns ``None`` when the threshold cannot be expressed as a fraction
+    (e.g. row-based counts without cardinality information).
+    """
+    # mustBe: 0 means zero errors regardless of unit → 100% of rows must pass
+    if quality.mustBe is not None and quality.mustBe == 0:
+        return 1.0
+
+    if not _is_percent_unit(quality):
+        if quality.mustBeLessThan is not None or quality.mustBeLessOrEqualTo is not None:
+            logger.warning(
+                "Great Expectations export: Library quality row-based threshold cannot be "
+                "converted to 'mostly' (row count unknown); 'mostly' will be omitted."
+            )
+        return None
+
+    # Percent unit: error_percent → mostly = 1 - error_percent / 100
+    if quality.mustBeLessThan is not None:
+        return round(1.0 - quality.mustBeLessThan / 100.0, 10)
+    if quality.mustBeLessOrEqualTo is not None:
+        return round(1.0 - quality.mustBeLessOrEqualTo / 100.0, 10)
+    if quality.mustBe is not None:
+        return round(1.0 - quality.mustBe / 100.0, 10)
+
+    logger.warning(
+        "Great Expectations export: Library quality percent operator cannot be mapped to "
+        "'mostly' (only mustBe/mustBeLessThan/mustBeLessOrEqualTo supported); 'mostly' omitted."
+    )
+    return None
+
+
+def _has_library_quality_for_metric(prop: SchemaProperty, metric: str) -> bool:
+    """True if the property has a Library quality covering the given metric."""
+    if not prop.quality:
+        return False
+    return any(
+        q is not None and q.metric is not None and q.metric.lower() == metric.lower()
+        for q in prop.quality
+    )
+
+
+def _library_null_values_exp(quality: DataQuality, field_name: str) -> Dict[str, Any]:
+    mostly = _calculate_mostly(quality)
+    kwargs: Dict[str, Any] = {"column": field_name}
+    if mostly is not None:
+        kwargs["mostly"] = mostly
+    return {
+        "type": "expect_column_values_to_not_be_null",
+        "kwargs": kwargs,
+        "meta": {"expectation_id": quality.id or ""},
+    }
+
+
+def _library_invalid_values_exp(quality: DataQuality, field_name: str) -> Optional[Dict[str, Any]]:
+    args = quality.arguments or {}
+    valid_values = args.get("validValues")
+    pattern = args.get("pattern")
+
+    if valid_values is None and pattern is None:
+        logger.warning(
+            "Great Expectations export: Library invalidValues on field '%s' requires "
+            "either validValues or pattern in arguments; skipping.",
+            field_name,
+        )
+        return None
+
+    mostly = _calculate_mostly(quality)
+
+    if pattern is not None:
+        kwargs: Dict[str, Any] = {"column": field_name, "regex": pattern}
+        if mostly is not None:
+            kwargs["mostly"] = mostly
+        return {
+            "type": "expect_column_values_to_match_regex",
+            "kwargs": kwargs,
+            "meta": {"expectation_id": quality.id or ""},
+        }
+
+    kwargs = {"column": field_name, "value_set": valid_values}
+    if mostly is not None:
+        kwargs["mostly"] = mostly
+    return {
+        "type": "expect_column_values_to_be_in_set",
+        "kwargs": kwargs,
+        "meta": {"expectation_id": quality.id or ""},
+    }
+
+
+def _library_duplicate_values_field_exp(quality: DataQuality, field_name: str) -> Dict[str, Any]:
+    mostly = _calculate_mostly(quality)
+    kwargs: Dict[str, Any] = {"column": field_name}
+    if mostly is not None:
+        kwargs["mostly"] = mostly
+    return {
+        "type": "expect_column_values_to_be_unique",
+        "kwargs": kwargs,
+        "meta": {"expectation_id": quality.id or ""},
+    }
+
+
+def _library_duplicate_values_schema_exp(quality: DataQuality) -> Optional[Dict[str, Any]]:
+    args = quality.arguments or {}
+    cols = args.get("properties")
+    if not cols:
+        logger.warning(
+            "Great Expectations export: Library duplicateValues at schema level requires "
+            "'properties' in arguments; skipping."
+        )
+        return None
+    return {
+        "type": "expect_compound_columns_to_be_unique",
+        "kwargs": {"column_list": cols},
+        "meta": {"expectation_id": quality.id or ""},
+    }
+
+
+def _library_row_count_exp(quality: DataQuality) -> Optional[Dict[str, Any]]:
+    if quality.mustBe is not None:
+        return {
+            "type": "expect_table_row_count_to_equal",
+            "kwargs": {"value": quality.mustBe},
+            "meta": {"expectation_id": quality.id or ""},
+        }
+
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+
+    if quality.mustBeBetween is not None and len(quality.mustBeBetween) == 2:
+        min_value = quality.mustBeBetween[0]
+        max_value = quality.mustBeBetween[1]
+    else:
+        if quality.mustBeGreaterThan is not None:
+            min_value = quality.mustBeGreaterThan + 1
+        elif quality.mustBeGreaterOrEqualTo is not None:
+            min_value = quality.mustBeGreaterOrEqualTo
+        if quality.mustBeLessThan is not None:
+            max_value = quality.mustBeLessThan - 1
+        elif quality.mustBeLessOrEqualTo is not None:
+            max_value = quality.mustBeLessOrEqualTo
+
+    if min_value is None and max_value is None:
+        logger.warning("Great Expectations export: Library rowCount has no valid threshold; skipping.")
+        return None
+
+    kwargs: Dict[str, Any] = {}
+    if min_value is not None:
+        kwargs["min_value"] = min_value
+    if max_value is not None:
+        kwargs["max_value"] = max_value
+    return {
+        "type": "expect_table_row_count_to_be_between",
+        "kwargs": kwargs,
+        "meta": {"expectation_id": quality.id or ""},
+    }
+
+
+def _library_to_expectations(
+    quality: DataQuality, field_name: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Dispatch a Library quality check to the appropriate GE expectation(s)."""
+    metric = quality.metric
+    if metric is None:
+        return []
+
+    metric_lower = metric.lower()
+
+    if metric_lower == "nullvalues":
+        if field_name is None:
+            logger.warning("Great Expectations export: Library nullValues is only supported at field level.")
+            return []
+        return [_library_null_values_exp(quality, field_name)]
+
+    if metric_lower == "invalidvalues":
+        if field_name is None:
+            logger.warning("Great Expectations export: Library invalidValues is only supported at field level.")
+            return []
+        exp = _library_invalid_values_exp(quality, field_name)
+        return [exp] if exp is not None else []
+
+    if metric_lower == "duplicatevalues":
+        if field_name is not None:
+            return [_library_duplicate_values_field_exp(quality, field_name)]
+        exp = _library_duplicate_values_schema_exp(quality)
+        return [exp] if exp is not None else []
+
+    if metric_lower == "rowcount":
+        exp = _library_row_count_exp(quality)
+        return [exp] if exp is not None else []
+
+    if metric_lower == "missingvalues":
+        if field_name is None:
+            logger.warning("Great Expectations export: Library missingValues is only supported at field level.")
+            return []
+        logger.warning(
+            "Great Expectations export: Library 'missingValues' on field '%s' is not supported; "
+            "skipping. Consider using 'invalidValues' with a validValues or pattern argument.",
+            field_name,
+        )
+        return []
+
+    logger.warning(
+        "Great Expectations export: Library metric '%s' is not supported; skipping.",
+        metric,
+    )
+    return []
 
 
 def get_quality_checks(qualities: List[DataQuality], field_name: str | None = None) -> List[Dict[str, Any]]:
@@ -345,9 +823,15 @@ def get_quality_checks(qualities: List[DataQuality], field_name: str | None = No
     """
     quality_specification = []
     for quality in qualities:
+        if quality is None:
+            continue
+        # Library type: identified by metric being set; no engine needed
+        if quality.metric is not None:
+            quality_specification.extend(_library_to_expectations(quality, field_name))
+            continue
+        # Custom type: engine = "great-expectations" or "greatexpectations"
         if (
-            quality is not None
-            and quality.engine is not None
+            quality.engine is not None
             and quality.engine.lower() in ("great-expectations", "greatexpectations")
         ):
             ge_expectation = quality.implementation

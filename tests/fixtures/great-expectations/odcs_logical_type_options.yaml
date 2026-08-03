@@ -1,0 +1,52 @@
+kind: DataContract
+apiVersion: v3.1.0
+id: my-data-contract-id
+name: Logical Type Options Unit Test
+version: 1.0.0
+status: active
+description:
+  purpose: Covers the logicalTypeOptions supported by the Great Expectations export
+team:
+  name: checkout
+schema:
+  - name: orders
+    properties:
+      - name: order_id
+        logicalType: string
+        primaryKey: true
+        primaryKeyPosition: 1
+      - name: customer_email
+        logicalType: string
+        required: true
+        logicalTypeOptions:
+          format: email
+      - name: discount_code
+        logicalType: string
+        unique: true
+        logicalTypeOptions:
+          minLength: 4
+          pattern: ^[A-Z]+$
+      - name: order_total
+        logicalType: number
+        logicalTypeOptions:
+          exclusiveMinimum: 0
+          exclusiveMaximum: 1000000
+      - name: quantity
+        logicalType: integer
+        logicalTypeOptions:
+          minimum: 1
+          exclusiveMaximum: 100
+          multipleOf: 5
+      - name: order_date
+        logicalType: date
+        logicalTypeOptions:
+          format: yyyy-MM-dd
+      - name: processed_at
+        logicalType: timestamp
+        logicalTypeOptions:
+          format: "yyyy-MM-dd'T'HH:mm:ss"
+          timezone: true
+      - name: legacy_code
+        logicalType: string
+        logicalTypeOptions:
+          format: binary

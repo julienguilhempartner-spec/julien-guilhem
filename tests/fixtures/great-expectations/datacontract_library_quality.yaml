@@ -1,0 +1,131 @@
+kind: DataContract
+apiVersion: v3.1.0
+id: test-library-quality-contract
+name: Library Quality Test Contract
+version: 1.0.0
+status: active
+description:
+  purpose: Tests all Library quality metric conversions to Great Expectations
+team:
+  name: checkout
+schema:
+  - name: orders
+    quality:
+      - id: orders_row_count_between
+        type: library
+        metric: rowCount
+        mustBeBetween: [1000, 5000]
+        description: "Row count must be between 1000 and 5000."
+      - id: orders_row_count_gt
+        type: library
+        metric: rowCount
+        mustBeGreaterThan: 100
+        description: "Row count must be greater than 100."
+      - id: orders_row_count_equal
+        type: library
+        metric: rowCount
+        mustBe: 2500
+        description: "Row count must equal 2500."
+      - id: orders_unique_compound
+        type: library
+        metric: duplicateValues
+        mustBe: 0
+        arguments:
+          properties:
+            - tenant_id
+            - order_id
+        description: "Combination of tenant_id and order_id must be unique."
+    properties:
+      - name: order_id
+        logicalType: integer
+        primaryKey: true
+        quality:
+          - id: order_id_no_nulls
+            metric: nullValues
+            mustBe: 0
+            description: "No null values allowed."
+
+      - name: email
+        logicalType: string
+        required: true
+        quality:
+          - id: email_null_percent
+            metric: nullValues
+            mustBeLessThan: 1
+            unit: percent
+            description: "Less than 1% null values allowed."
+
+      - name: phone
+        logicalType: string
+        quality:
+          - id: phone_pattern
+            metric: invalidValues
+            mustBe: 0
+            arguments:
+              pattern: '^\+?[\d\-\s()]{10,}$'
+            description: "Phone must match pattern."
+
+      - name: product_code
+        logicalType: string
+        unique: true
+        quality:
+          - id: product_code_dup_percent
+            metric: duplicateValues
+            mustBeLessThan: 5
+            unit: percent
+            description: "Less than 5% duplicates allowed."
+
+      - name: status
+        logicalType: string
+        required: true
+        quality:
+          - id: status_valid_values
+            metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues:
+                - PENDING
+                - COMPLETED
+                - FAILED
+            description: "Status must be a valid value."
+
+      - name: created_date
+        logicalType: date
+        quality:
+          - id: created_date_null_percent
+            metric: nullValues
+            mustBeLessOrEqualTo: 2
+            unit: percent
+            description: "At most 2% null values allowed."
+
+      - name: missing_column
+        logicalType: string
+        quality:
+          - id: missing_col_missing_values
+            metric: missingValues
+            mustBeLessThan: 1
+            unit: percent
+            arguments:
+              missingValues:
+                - null
+                - ""
+                - "N/A"
+            description: "Custom missing values check (unsupported in Phase 1)."
+
+      - name: tenant_id
+        logicalType: string
+        required: true
+
+      - name: notes
+        logicalType: string
+        quality:
+          - id: notes_invalid_rows
+            metric: invalidValues
+            mustBeLessThan: 5
+            unit: rows
+            arguments:
+              validValues:
+                - low
+                - medium
+                - high
+            description: "Row-based threshold (no mostly conversion)."

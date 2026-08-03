@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any, Dict
 
 import pytest
@@ -12,6 +13,9 @@ from datacontract.imports.dcs_importer import convert_dcs_to_odcs
 from datacontract.lint import resolve
 
 # logging.basicConfig(level=logging.DEBUG, force=True)
+
+EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+UUID_REGEX = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 
 
 def test_cli():
@@ -58,6 +62,13 @@ def data_contract_great_expectations_quality_column() -> OpenDataContractStandar
 
 
 @pytest.fixture
+def odcs_logical_type_options() -> OpenDataContractStandard:
+    return resolve.resolve_data_contract_from_location(
+        "./fixtures/great-expectations/odcs_logical_type_options.yaml",
+    )
+
+
+@pytest.fixture
 def expected_json_suite() -> Dict[str, Any]:
     return {
         "name": "orders.1.0.0",
@@ -70,17 +81,27 @@ def expected_json_suite() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "string"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "processed_timestamp", "type_": "timestamp"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -96,12 +117,17 @@ def expected_json_suite_table_quality() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "string"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -116,23 +142,29 @@ def expected_json_suite_with_enum() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["id", "type"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "id", "type_": "string"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
-            {"type": "expect_column_values_to_be_unique", "kwargs": {"column": "id"}, "meta": {}},
+            {"type": "expect_column_values_to_not_be_null", "kwargs": {"column": "id", "mostly": 1.0}, "meta": {"expectation_id": ""}},
+            {"type": "expect_column_values_to_be_unique", "kwargs": {"column": "id", "mostly": 1.0}, "meta": {"expectation_id": ""}},
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "type", "type_": "string"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "type", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_in_set",
                 "kwargs": {"column": "type", "value_set": ["A", "B", "C", "D", "E"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_value_lengths_to_equal",
@@ -158,17 +190,27 @@ def expected_spark_engine() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "StringType"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "processed_timestamp", "type_": "TimestampType"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -188,17 +230,27 @@ def expected_pandas_engine() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "str"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "processed_timestamp", "type_": "datetime64[ns]"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -218,17 +270,27 @@ def expected_sql_engine() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "STRING"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "processed_timestamp", "type_": "TIMESTAMP_TZ"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -248,12 +310,17 @@ def expected_sql_trino_engine() -> Dict[str, Any]:
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "varchar"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
@@ -261,7 +328,12 @@ def expected_sql_trino_engine() -> Dict[str, Any]:
                     "column": "processed_timestamp",
                     "type_": "timestamp(3) with time zone",
                 },
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -275,27 +347,42 @@ def test_to_great_expectation(data_contract_basic: OpenDataContractStandard):
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "order_total", "order_status"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "varchar"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_unique",
-                "kwargs": {"column": "order_id"},
-                "meta": {},
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_value_lengths_to_be_between",
                 "kwargs": {"column": "order_id", "min_value": 8, "max_value": 10},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "order_id", "regex": "^B[0-9]+$"},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_total", "type_": "bigint"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_total", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_between",
@@ -304,17 +391,27 @@ def test_to_great_expectation(data_contract_basic: OpenDataContractStandard):
                     "min_value": 0,
                     "max_value": 1000000,
                 },
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_status", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_status", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_unique",
+                "kwargs": {"column": "order_status", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_in_set",
                 "kwargs": {"column": "order_status", "value_set": ["pending", "shipped", "delivered"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -343,42 +440,72 @@ def test_to_great_expectation_complex(data_contract_complex: OpenDataContractSta
                         "customer_email_address",
                     ]
                 },
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_unique",
-                "kwargs": {"column": "order_id"},
-                "meta": {},
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "order_id", "regex": UUID_REGEX},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_timestamp", "type_": "timestamp"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_total", "type_": "long"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_total", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "customer_id", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_value_lengths_to_be_between",
                 "kwargs": {"column": "customer_id", "min_value": 10, "max_value": 20},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "customer_email_address", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "customer_email_address", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "customer_email_address", "regex": EMAIL_REGEX},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -390,27 +517,42 @@ def test_to_great_expectation_complex(data_contract_complex: OpenDataContractSta
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["lines_item_id", "order_id", "sku"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "lines_item_id", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "lines_item_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_unique",
-                "kwargs": {"column": "lines_item_id"},
-                "meta": {},
+                "kwargs": {"column": "lines_item_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "order_id", "regex": UUID_REGEX},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "sku", "type_": "text"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "sku", "regex": "^[A-Za-z0-9]{8,14}$"},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -452,17 +594,27 @@ def test_to_great_expectation_custom_name(
             {
                 "type": "expect_table_columns_to_match_ordered_list",
                 "kwargs": {"column_list": ["order_id", "processed_timestamp"]},
-                "meta": {},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "order_id", "type_": "string"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
             {
                 "type": "expect_column_values_to_be_of_type",
                 "kwargs": {"column": "processed_timestamp", "type_": "timestamp"},
-                "meta": {},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "processed_timestamp", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
             },
         ],
         "meta": {},
@@ -619,3 +771,156 @@ def test_to_great_expectation_quality_column(
     """
     result = to_great_expectations(data_contract_great_expectations_quality_column, "orders")
     assert result == json.dumps(expected_json_suite_with_enum, indent=2)
+
+
+def test_to_great_expectation_logical_type_options(odcs_logical_type_options: OpenDataContractStandard):
+    """
+    Test that primaryKey, required, unique and the logicalTypeOptions are converted to expectations
+    """
+    expected = {
+        "name": "orders.1.0.0",
+        "expectations": [
+            {
+                "type": "expect_table_columns_to_match_ordered_list",
+                "kwargs": {
+                    "column_list": [
+                        "order_id",
+                        "customer_email",
+                        "discount_code",
+                        "order_total",
+                        "quantity",
+                        "order_date",
+                        "processed_at",
+                        "legacy_code",
+                    ]
+                },
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "order_id", "type_": "string"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_unique",
+                "kwargs": {"column": "order_id", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "customer_email", "type_": "string"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_not_be_null",
+                "kwargs": {"column": "customer_email", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "customer_email", "regex": EMAIL_REGEX},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "discount_code", "type_": "string"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_unique",
+                "kwargs": {"column": "discount_code", "mostly": 1.0},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_value_lengths_to_be_between",
+                "kwargs": {"column": "discount_code", "min_value": 4, "max_value": None},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_regex",
+                "kwargs": {"column": "discount_code", "regex": "^[A-Z]+$"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "order_total", "type_": "number"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_between",
+                "kwargs": {
+                    "column": "order_total",
+                    "min_value": 0,
+                    "max_value": 1000000,
+                    "strict_min": True,
+                    "strict_max": True,
+                },
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "quantity", "type_": "integer"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_between",
+                "kwargs": {
+                    "column": "quantity",
+                    "min_value": 1,
+                    "max_value": 100,
+                    "strict_max": True,
+                },
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "order_date", "type_": "date"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_strftime_format",
+                "kwargs": {"column": "order_date", "strftime_format": "%Y-%m-%d"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "processed_at", "type_": "timestamp"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_match_strftime_format",
+                "kwargs": {"column": "processed_at", "strftime_format": "%Y-%m-%dT%H:%M:%S"},
+                "meta": {"expectation_id": ""},
+            },
+            {
+                "type": "expect_column_values_to_be_of_type",
+                "kwargs": {"column": "legacy_code", "type_": "string"},
+                "meta": {"expectation_id": ""},
+            },
+        ],
+        "meta": {},
+    }
+
+    result = to_great_expectations(odcs_logical_type_options, "orders")
+    assert result == json.dumps(expected, indent=2)
+
+
+def test_to_great_expectation_unsupported_options_are_logged(
+    odcs_logical_type_options: OpenDataContractStandard,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Test that logical type options without a Great Expectations equivalent are logged
+    """
+    with caplog.at_level(logging.WARNING, logger="datacontract.export.great_expectations_exporter"):
+        to_great_expectations(odcs_logical_type_options, "orders")
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("multipleOf" in message and "quantity" in message for message in messages)
+    assert any("timezone" in message and "processed_at" in message for message in messages)
+    assert any("binary" in message and "legacy_code" in message for message in messages)
