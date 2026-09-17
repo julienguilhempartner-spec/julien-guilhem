@@ -315,32 +315,54 @@ def register_commands():
         return
 
     from datacontract import (
-        command_api,
-        command_breaking,
-        command_catalog,
-        command_changelog,
-        command_ci,
+        command_api as _command_api,
+        command_breaking as _command_breaking,
+        command_catalog as _command_catalog,
+        command_changelog as _command_changelog,
+        command_ci as _command_ci,
         command_dbt,
-        command_edit,
+        command_edit as _command_edit,
         command_export,
         command_import,
-        command_init,
-        command_lint,
-        command_publish,
+        command_init as _command_init,
+        command_lint as _command_lint,
+        command_publish as _command_publish,
         command_test,
     )
 
     # A direct import of a command module reaches here while that module is
     # still being initialized.  Let it finish, then it will call us again.
-    if not all(hasattr(module, name) for module, name in (
-        (command_export, "export_app"),
-        (command_test, "CheckCategory"),
-    )):
+    if not all(
+        hasattr(module, name)
+        for module, name in (
+            (command_export, "export_app"),
+            (command_test, "CheckCategory"),
+        )
+    ):
         return
 
-    app.add_typer(command_import.import_app, name="import", help="Create a data contract from a source format.", epilog="Example: datacontract import sql --source ddl.sql --dialect postgres --output datacontract.yaml")
-    app.add_typer(command_export.export_app, name="export", help="Convert a data contract to a target format.", epilog=("Example: datacontract export html datacontract.yaml --output datacontract.html\n\n" "For SQL dialects (postgres, mysql, snowflake, databricks, sqlserver, trino, oracle, clickhouse), use `datacontract export sql --dialect <dialect>`."))
-    app.add_typer(command_dbt.dbt_app, name="dbt", help="Work with data contracts in your dbt project.", epilog="Example: datacontract dbt sync orders.odcs.yaml --project-dir ./warehouse")
+    app.add_typer(
+        command_import.import_app,
+        name="import",
+        help="Create a data contract from a source format.",
+        epilog="Example: datacontract import sql --source ddl.sql --dialect postgres --output datacontract.yaml",
+    )
+    app.add_typer(
+        command_export.export_app,
+        name="export",
+        help="Convert a data contract to a target format.",
+        epilog=(
+            "Example: datacontract export html datacontract.yaml --output datacontract.html\n\n"
+            "For SQL dialects (postgres, mysql, snowflake, databricks, sqlserver, trino, oracle, clickhouse), "
+            "use `datacontract export sql --dialect <dialect>`."
+        ),
+    )
+    app.add_typer(
+        command_dbt.dbt_app,
+        name="dbt",
+        help="Work with data contracts in your dbt project.",
+        epilog="Example: datacontract dbt sync orders.odcs.yaml --project-dir ./warehouse",
+    )
     _commands_registered = True
 
 

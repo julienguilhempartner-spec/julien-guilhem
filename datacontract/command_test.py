@@ -273,5 +273,6 @@ def test(
 
 
 # Complete deferred CLI registration after this module is fully initialized.
-from datacontract.cli import register_commands
+from datacontract.cli import register_commands  # noqa: E402
+
 register_commands()
