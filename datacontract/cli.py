@@ -314,21 +314,21 @@ def register_commands():
     if _commands_registered:
         return
 
-    from importlib import import_module
-
-    import_module("datacontract.command_api")
-    import_module("datacontract.command_breaking")
-    import_module("datacontract.command_catalog")
-    import_module("datacontract.command_changelog")
-    import_module("datacontract.command_ci")
-    command_dbt = import_module("datacontract.command_dbt")
-    import_module("datacontract.command_edit")
-    command_export = import_module("datacontract.command_export")
-    command_import = import_module("datacontract.command_import")
-    import_module("datacontract.command_init")
-    import_module("datacontract.command_lint")
-    import_module("datacontract.command_publish")
-    command_test = import_module("datacontract.command_test")
+    from datacontract import (
+        command_api as _command_api,
+        command_breaking as _command_breaking,
+        command_catalog as _command_catalog,
+        command_changelog as _command_changelog,
+        command_ci as _command_ci,
+        command_dbt,
+        command_edit as _command_edit,
+        command_export,
+        command_import,
+        command_init as _command_init,
+        command_lint as _command_lint,
+        command_publish as _command_publish,
+        command_test,
+    )
 
     # A direct import of a command module reaches here while that module is
     # still being initialized.  Let it finish, then it will call us again.
